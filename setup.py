@@ -20,9 +20,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
     'console_scripts': [
-      'img_publisher = cv_basics.webcam_pub:main',
-      'img_subscriber = cv_basics.webcam_sub:main',
-      'realsense_publisher = cv_basics.realsense_pub:main'
+        'img_publisher = cv_basics.webcam_pub:main',
+        'img_subscriber = cv_basics.webcam_sub:main',
+        'realsense_publisher = cv_basics.realsense_pub:main',
+        'pointcloud_publisher = cv_basics.pointcloud_pub:main'
     ],
 },
 )

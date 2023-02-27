@@ -1,0 +1,29 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/sendol/colcon_ws/install/turtlebot3_msgs/include/**",
+        "/home/sendol/colcon_ws/install/realsense2_camera/include/**",
+        "/home/sendol/colcon_ws/install/realsense2_camera_msgs/include/**",
+        "/home/sendol/colcon_ws/install/dynamixel_sdk_custom_interfaces/include/**",
+        "/home/sendol/colcon_ws/install/dynamixel_sdk/include/**",
+        "/opt/ros/foxy/include/**",
+        "/home/sendol/colcon_ws/src/DynamixelSDK/dynamixel_sdk/include/**",
+        "/home/sendol/colcon_ws/src/DynamixelSDK/dynamixel_sdk_examples/include/**",
+        "/home/sendol/colcon_ws/src/realsense-ros/realsense2_camera/include/**",
+        "/home/sendol/colcon_ws/src/turtlebot3/turtlebot3_node/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
