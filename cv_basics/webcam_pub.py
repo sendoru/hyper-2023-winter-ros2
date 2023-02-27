@@ -22,12 +22,13 @@ if os.name == 'nt':
 else:
     import termios
     import tty
+    
 
 def get_key(settings):
     if os.name == 'nt':
         return msvcrt.getch().decode('utf-8')
     tty.setraw(sys.stdin.fileno())
-    rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+    rlist, _, _ = select.select([sys.stdin], [], [], 1./30)
     if rlist:
         key = sys.stdin.read(1)
     else:
@@ -50,15 +51,16 @@ class ImagePublisher(Node):
 
         # Create the publisher. This publisher will publish an Image
         # to the video_frames topic. The queue size is 10 messages.
-        self.publisher_ = self.create_publisher(Image, 'video_frames', 10)
+        self.publisher_ = self.create_publisher(Image, 'video_frames', 0)
 
         # We will publish a message every 0.1 seconds
-        timer_period = 1./500  # seconds
+        timer_period = 1./30  # seconds
 
-        self.cap = cv2.VideoCapture(0)
+        self.cap0 = cv2.VideoCapture(0)
+        self.cap1 = cv2.VideoCapture(1)
 
         # Create the timer
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer = self.create_timer(0.0001, self.timer_callback)
 
         # Used to convert between ROS and OpenCV images
         self.br = CvBridge()
@@ -71,13 +73,13 @@ class ImagePublisher(Node):
         # Capture frame-by-frame
         # This method returns True/False as well
         # as the video frame.
-        ret, frame = self.cap.read()
+        ret0, frame0 = self.cap0.read()
 
-        if ret == True:
+        if ret0 == True:
             # Publish the image.
             # The 'cv2_to_imgmsg' method converts an OpenCV
             # image to a ROS 2 image message
-            self.publisher_.publish(self.br.cv2_to_imgmsg(frame))
+            self.publisher_.publish(self.br.cv2_to_imgmsg(frame0))
 
         # Display the message on the console
         self.get_logger().info('Publishing video frame')
@@ -96,10 +98,14 @@ def main(args=None):
 
     spinning = True
     while True:
+        
         # toggle interrupt mode when key is pressed
         key = get_key(settings)
         if key != '':
-            spinning = not spinning
+            if ord(key) == 3 or ord(key) == 27:
+                break
+            else:
+                spinning = True
 
         # Spin the node so the callback function is called.
         if spinning:
