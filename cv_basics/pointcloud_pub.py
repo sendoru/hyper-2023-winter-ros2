@@ -91,8 +91,8 @@ class PointCloudPublisher(Node):
         # We will publish a message every 0.1 seconds
         timer_period = 1./30  # seconds
 
-        self.cap_l = cv2.VideoCapture("./src/hyper-2023-winter-ros2/output_L_near.mp4")
-        self.cap_r = cv2.VideoCapture("./src/hyper-2023-winter-ros2/output_R_near.mp4")
+        self.cap_l = cv2.VideoCapture("/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_L_near.mp4")
+        self.cap_r = cv2.VideoCapture("/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_R_near.mp4")
 
         self.hands_l = mp_hands.Hands(
             max_num_hands=1,
@@ -170,11 +170,11 @@ class PointCloudPublisher(Node):
                     # TODO publish poinets here!!!!
                     ret = msg.PointCloud()
                     # TODO 이거 형변환 해주고 들어가야되나보네
-                    ret.points = [geometry_msgs.msg.Point32()] * len(points)
+                    ret.points = [geometry_msgs.msg.Point32() for _ in range(len(points))]
                     for i, [x, y, z] in enumerate(points):
-                        ret.points[i].x = x / 1000
-                        ret.points[i].y = y / 1000
-                        ret.points[i].z = z / 1000
+                        ret.points[i].x = float(x / 1000)
+                        ret.points[i].y = float(y / 1000)
+                        ret.points[i].z = float(z / 1000)
                     ret.header.frame_id = 'pointcloud'
                     cur_time = time.time()
                     ret.header.stamp.sec = int(cur_time)
@@ -182,15 +182,12 @@ class PointCloudPublisher(Node):
                     self.publisher_.publish(ret)
                 
                     # Display the message on the console
-                    self.get_logger().info('Publishing PointCloud')
+                    self.get_logger().info(f'Publishing PointCloud with {len(ret.points)} point(s)')
 
         self.frame_no += 1
 
-
-
-
 def main(args=None):
-    print(os.getcwd())
+    # print(os.getcwd())
     # Initialize the rclpy library
     rclpy.init(args=args)
 
