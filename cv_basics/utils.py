@@ -4,13 +4,49 @@ import mediapipe as mp
 import open3d as o3d 
 import numpy as np
 import copy
+from sklearn.linear_model import LinearRegression
 from cv_basics.constants import *
 
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
-cap_l = cv2.VideoCapture("./output_L_near.mp4")
-cap_r = cv2.VideoCapture("./output_R_near.mp4")
+
+def preprocess(image: np.ndarray, intrinsic_mat: np.ndarray, distortion_coeff: np.ndarray, hands):
+    image = cv2.undistort(image, intrinsic_mat, distortion_coeff)
+    image.flags.writeable = False
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = hands.process(image)
+    # Draw the hand annotations on the image.
+    image.flags.writeable = True
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    return results
+
+def draw_hand(results, image):
+    for hand_no, hand_landmarks in enumerate(results.multi_hand_landmarks):
+        print(f'HAND NUMBER: {hand_no+1}')
+        
+        mp_drawing.draw_landmarks(
+            image,
+            hand_landmarks,
+            mp_hands.HAND_CONNECTIONS,
+            mp_drawing_styles.get_default_hand_landmarks_style(),
+            mp_drawing_styles.get_default_hand_connections_style())
+
+
+def linear_regression_update_with_moving_average(X, y, prev, decay=ALPHA):
+    reg = LinearRegression().fit(X, y)
+    prev.coef_ = decay * reg.coef_ + (1 - decay) * prev.coef_
+    prev.intercept_ = decay * reg.intercept_ + (1 - decay) * prev.intercept_
+
+
+def hand_landmarks_to_array(hand_landmarks):
+    ret = np.zeros((21, 3))
+    for i in range(21): # 0~20
+        ret[i][0] = hand_landmarks.landmark[mp_hands.HandLandmark(i).value].x
+        ret[i][1] = hand_landmarks.landmark[mp_hands.HandLandmark(i).value].y
+        ret[i][2] = hand_landmarks.landmark[mp_hands.HandLandmark(i).value].z
+    return ret
+
 
 def map_hand_to_2d(hands, img_width: int, img_heigth: int):
     ret = []
@@ -28,13 +64,13 @@ def map_hand_to_2d(hands, img_width: int, img_heigth: int):
 
 # 이거 일단 양쪽 카메라에서 손이 1개씩만 있는 경우를 가정하고 해야겠다
 # TODO disortion 보정한 intrinsic matrix 적용
-def recon_3d_hand_points(img_width: int, img_height: int,
+def recon_3d_hand_points(img_w:int, img_h: int,
                     hands_l, hands_r,
                     l_int: np.ndarray=L_INTRINSIC, r_int:np.ndarray=R_INTRINSIC,
                     l_ext: np.ndarray=L_EXTRINSIC, r_ext: np.ndarray=R_EXTRINSIC):
 
-    hand_l_xy = map_hand_to_2d(hands_l, img_width, img_height)
-    hand_r_xy = map_hand_to_2d(hands_r, img_width, img_height)
+    hand_l_xy = map_hand_to_2d(hands_l, img_w, img_h)
+    hand_r_xy = map_hand_to_2d(hands_r, img_w, img_h)
 
     if not (len(hand_l_xy) == 1 and len(hand_r_xy) == 1):
         return None
@@ -64,10 +100,10 @@ def connect_3d_hand_points(points: np.ndarray):
     
     return pointcloud, lines
 
-def recon_3d_hand(img_width: int, img_height: int,
+def recon_3d_hand(img_w: int, img_h: int,
                     hands_l, hands_r,
                     l_int: np.ndarray=L_INTRINSIC, r_int:np.ndarray=R_INTRINSIC,
                     l_ext: np.ndarray=L_EXTRINSIC, r_ext: np.ndarray=R_EXTRINSIC):
-    points = recon_3d_hand_points(img_width, img_height, hands_l, hands_r, l_int, r_int, l_ext, r_ext)
+    points = recon_3d_hand_points(img_w, img_h, hands_l, hands_r, l_int, r_int, l_ext, r_ext)
     return connect_3d_hand_points(points)
 
