@@ -21,11 +21,12 @@ import numpy as np
 import mediapipe as mp
 import time
 import open3d as o3d
+from sklearn.linear_model import LinearRegression
 
 from rclpy.qos import QoSProfile
 
 from cv_basics.constants import *
-from cv_basics.recon_3d_hand import recon_3d_hand
+from cv_basics.utils import *
 
 if os.name == 'nt':
     import msvcrt
@@ -87,6 +88,13 @@ class PointCloudPublisher(Node):
         self.recent_points = deque()
         self.recent_timings = deque()
         self.frame_no = 0
+        self.regression_l = LinearRegression()
+        self.regression_l.coef_ = np.zeros((3, 3))
+        self.regression_l.intercept_ = np.zeros(3)
+        self.regression_r = LinearRegression()
+        self.regression_r.coef_ = np.zeros((3, 3))
+        self.regression_r.intercept_ = np.zeros(3)
+        self.alpha_sum = 0
 
         # We will publish a message every 0.1 seconds
         timer_period = 1./30  # seconds
@@ -109,9 +117,6 @@ class PointCloudPublisher(Node):
         # Create the timer
         self.timer = self.create_timer(1./30, self.timer_callback)
 
-        # TODO implement PointCloud2 Bridge
-        self.br = CvBridge()
-
     def timer_callback(self):
         """
         Callback function.
@@ -129,26 +134,55 @@ class PointCloudPublisher(Node):
         
         if frame_l.shape != frame_r.shape:
             cv2.resize(frame_l, frame_r.shape[1], frame_r.shape[0])
+        cur_point = None
 
-        result_l =preprocess(frame_l, L_INTRINSIC, L_DISTORTION, self.hands_l)
+        result_l = preprocess(frame_l, L_INTRINSIC, L_DISTORTION, self.hands_l)
         result_r = preprocess(frame_r, R_INTRINSIC, R_DISTORTION, self.hands_r)
-        hand_3d = recon_3d_hand(frame_l.shape[0], frame_r.shape[0], result_l, result_r)
+        hand_3d = recon_3d_hand(frame_l.shape[1], frame_l.shape[0], result_l, result_r)
         if type(hand_3d) != type(None):
             # 8번점 = 검지끝
+            cur_point = hand_3d[0].points[8]
             if len(self.recent_points) == 0:
-                self.recent_points.append(hand_3d[0].points[8])
-                self.recent_timings.append(self.frame_no / FRAME_RATE)
+                pass
 
             else:
-                speed = np.linalg.norm(hand_3d[0].points[8] - self.recent_points[-1]) / ((self.frame_no / FRAME_RATE) - self.recent_timings[-1])
-                if np.linalg.norm(hand_3d[0].points[8]) <= DIST_THRESHOLD and speed <= SPEED_THRESHOLD and np.abs(hand_3d[0].points[8][2]) >= DEPTH_MIN_THRESHOLD:
-                    cur_points = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(np.array([hand_3d[0].points[8], self.recent_points[-1]])))
-                    # vis.add_geometry(cur_points)
-                    line = o3d.geometry.LineSet()
-                    line.points = cur_points.points
-                    line.lines = o3d.utility.Vector2iVector([[0, 1]])
-                    # vis.add_geometry(line)
-                    self.recent_points.append(hand_3d[0].points[8])
+                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / ((self.frame_no / FRAME_RATE) - self.recent_timings[-1])
+                if np.linalg.norm(cur_point) <= DIST_THRESHOLD and speed <= SPEED_THRESHOLD and np.abs(cur_point[2]) >= DEPTH_MIN_THRESHOLD:
+
+                    # linear regression
+                    self.alpha_sum = ALPHA + (1 - ALPHA) * self.alpha_sum
+
+                    linear_regression_update_with_moving_average(
+                        hand_landmarks_to_array(result_l.multi_hand_landmarks[0]),
+                        hand_3d[0].points,
+                        self.regression_l)
+                    linear_regression_update_with_moving_average(
+                        hand_landmarks_to_array(result_r.multi_hand_landmarks[0]),
+                        hand_3d[0].points,
+                        self.regression_r)
+                    
+
+        # 제대로 인식된 손이 1개 이하일 경우 
+        else:
+            if result_l.multi_hand_landmarks:
+                hand_landmars_array = hand_landmarks_to_array(result_l.multi_hand_landmarks[0])
+                cur_point = self.regression_l.predict(hand_landmars_array[8].reshape((1, -1))) / self.alpha_sum
+                cur_point = cur_point.reshape(3)
+                pass
+            elif result_r.multi_hand_landmarks:
+                hand_landmars_array = hand_landmarks_to_array(result_r.multi_hand_landmarks[0])
+                cur_point = self.regression_r.predict(hand_landmars_array[8].reshape((1, -1))) / self.alpha_sum
+                cur_point = cur_point.reshape(3)
+            print(self.alpha_sum)
+
+        if type(cur_point) != type(None):
+            if len(self.recent_points) == 0:
+                self.recent_points.append(cur_point)
+                self.recent_timings.append(self.frame_no / FRAME_RATE)
+            else:
+                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / ((self.frame_no / FRAME_RATE) - self.recent_timings[-1])
+                if np.linalg.norm(cur_point) <= DIST_THRESHOLD and speed <= SPEED_THRESHOLD and np.abs(cur_point[2]) >= DEPTH_MIN_THRESHOLD:
+                    self.recent_points.append(cur_point)
                     self.recent_timings.append(self.frame_no / FRAME_RATE)
 
             while len(self.recent_points) > 5:
@@ -161,7 +195,7 @@ class PointCloudPublisher(Node):
                 dt = t[1:] - t[:-1]
 
                 # 손가락이 화면에서 너무 오랬동안 없어져 있던 경우에는 보간 중지
-                if max(dt) <= .5:
+                if dt[-1] <= .5:
                     xy = np.array(self.recent_points)
                     tt = np.linspace(self.recent_timings[-2], self.recent_timings[-1], 30)
                     bspl = sp.interpolate.make_interp_spline(t, xy)
@@ -171,6 +205,7 @@ class PointCloudPublisher(Node):
                     ret = msg.PointCloud()
                     # TODO 이거 형변환 해주고 들어가야되나보네
                     ret.points = [geometry_msgs.msg.Point32() for _ in range(len(points))]
+                    # cv2에선 단위가 mm인데 ROS에선 m임
                     for i, [x, y, z] in enumerate(points):
                         ret.points[i].x = float(x / 1000)
                         ret.points[i].y = float(y / 1000)
@@ -180,6 +215,8 @@ class PointCloudPublisher(Node):
                     ret.header.stamp.sec = int(cur_time)
                     ret.header.stamp.nanosec = int((cur_time - int(cur_time)) * 1e9)
                     self.publisher_.publish(ret)
+                    print(ret.points[-1])
+
                 
                     # Display the message on the console
                     self.get_logger().info(f'Publishing PointCloud with {len(ret.points)} point(s)')
