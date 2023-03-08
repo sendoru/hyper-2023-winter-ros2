@@ -21,6 +21,7 @@ import numpy as np
 import mediapipe as mp
 import time
 import open3d as o3d
+import argparse
 from sklearn.linear_model import LinearRegression
 
 from rclpy.qos import QoSProfile
@@ -51,30 +52,8 @@ def get_key(settings):
     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
     return key
 
-def preprocess(image: np.ndarray, intrinsic_mat: np.ndarray, distortion_coeff: np.ndarray, hands):
-    image = cv2.undistort(image, intrinsic_mat, distortion_coeff)
-    image.flags.writeable = False
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = hands.process(image)
-    # Draw the hand annotations on the image.
-    image.flags.writeable = True
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-    return results
-
-def draw_hand(results, image):
-    for hand_no, hand_landmarks in enumerate(results.multi_hand_landmarks):
-        print(f'HAND NUMBER: {hand_no+1}')
-        
-        mp_drawing.draw_landmarks(
-            image,
-            hand_landmarks,
-            mp_hands.HAND_CONNECTIONS,
-            mp_drawing_styles.get_default_hand_landmarks_style(),
-            mp_drawing_styles.get_default_hand_connections_style()
-        )
-
 class PointCloudPublisher(Node):
-    def __init__(self):
+    def __init__(self, video_l, video_r, debug):
         """
         Class constructor to set up the node
         """
@@ -97,10 +76,12 @@ class PointCloudPublisher(Node):
         self.alpha_sum = 0
 
         # We will publish a message every 0.1 seconds
-        timer_period = 1./30  # seconds
+        timer_period = 1./30 # seconds
 
-        self.cap_l = cv2.VideoCapture("/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_L_near.mp4")
-        self.cap_r = cv2.VideoCapture("/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_R_near.mp4")
+        self.cap_l = cv2.VideoCapture(video_l)
+        self.cap_r = cv2.VideoCapture(video_r)
+
+        self.debug = debug
 
         self.hands_l = mp_hands.Hands(
             max_num_hands=1,
@@ -130,6 +111,7 @@ class PointCloudPublisher(Node):
         
         if not ret_l or not ret_r:
             print("Ignoring empty camera frame.")
+            cv2.destroyAllWindows()
             return
         
         if frame_l.shape != frame_r.shape:
@@ -138,6 +120,11 @@ class PointCloudPublisher(Node):
 
         result_l = preprocess(frame_l, L_INTRINSIC, L_DISTORTION, self.hands_l)
         result_r = preprocess(frame_r, R_INTRINSIC, R_DISTORTION, self.hands_r)
+        if self.debug:
+            output_image = cv2.hconcat([frame_l, frame_r])
+            cv2.imshow("Debug Image",output_image)
+            cv2.waitKey(1)
+
         hand_3d = recon_3d_hand(frame_l.shape[1], frame_l.shape[0], result_l, result_r)
         if type(hand_3d) != type(None):
             # 8번점 = 검지끝
@@ -228,8 +215,21 @@ def main(args=None):
     # Initialize the rclpy library
     rclpy.init(args=args)
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--video_l", help="file/device name of left video", default=None, required=False)
+    parser.add_argument("--video_r", help="file/device name of right video", default=None, required=False)
+    parser.add_argument("--debug", help="use debug mode: ", action="store_true")
+
+    args = parser.parse_args()
+
+    if args.debug:
+        args.video_l = "/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_L_near.mp4"
+        args.video_r = "/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_R_near.mp4"
+
+    print(args.video_l, args.video_r)
+
     # Create the node
-    pointcolut_publisher = PointCloudPublisher()
+    pointcolut_publisher = PointCloudPublisher(0 if args.video_l == None else args.video_l, 1 if args.video_r == None else args.video_r, args.debug)
 
     settings = None
     if os.name != 'nt':
