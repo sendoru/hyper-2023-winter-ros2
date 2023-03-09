@@ -15,7 +15,7 @@ import open3d as o3d
 import scipy as sp
 import numpy as np
 import mediapipe as mp
-
+import std_msgs.msg
 from cv_basics.constants import *
 from cv_basics.utils import *
 
@@ -33,12 +33,19 @@ class PointcloudSubscriber(Node):
 
         # Create the subscriber. This subscriber will receive an Image
         # from the video_frames topic. The queue size is 10 messages.
-        self.subscription = self.create_subscription(
+        self.pointcloud_subscription = self.create_subscription(
             sensor_msg.PointCloud,
             'pointcloud',
-            self.listener_callback,
+            self.pointcloud_listener_callback,
             5)
-        self.subscription  # prevent unused variable warning
+        
+        self.keyboard_subscription = self.create_subscription(
+            std_msgs.msg.Strnig,
+            'keyboard_op',
+            self.keyboard_listener_callback,
+            5
+        )
+        self.pointcloud_subscription  # prevent unused variable warning
 
         # Used to convert between ROS and OpenCV images
         self.br = CvBridge()
@@ -46,8 +53,9 @@ class PointcloudSubscriber(Node):
         self.pointcloud = o3d.geometry.PointCloud()
         self.vis = o3d.visualization.Visualizer()
         self.vis.create_window(width=1600, height=900)
+        self.record = True
 
-    def listener_callback(self, data: sensor_msg.PointCloud):
+    def pointcloud_listener_callback(self, data: sensor_msg.PointCloud):
         """
         Callback function.
         """
@@ -61,9 +69,23 @@ class PointcloudSubscriber(Node):
             cur_points.append([point.x, point.y, point.z])
         cur_points = o3d.utility.Vector3dVector(np.array(cur_points))
         cur_pointcloud = o3d.geometry.PointCloud(cur_points)
-        self.vis.add_geometry(cur_pointcloud)
-        self.vis.poll_events()
-        self.vis.update_renderer()
+        if self.record:
+            self.vis.add_geometry(cur_pointcloud)
+            self.vis.poll_events()
+            self.vis.update_renderer()
+
+    def keyboard_listener_callback(self, data: std_msgs.msg.String):
+        key = data.data
+        if key == 't':
+            # toggle
+            self.record  = not self.record
+        elif key == 'e':
+            # erase
+            self.vis.clear_geometries()
+        elif key == 'q':
+            # quit
+            self.destroy_node()
+        self.get_logger().info("")
 
 def main(args=None):
 
