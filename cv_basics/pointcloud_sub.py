@@ -40,8 +40,8 @@ class PointcloudSubscriber(Node):
             5)
         
         self.keyboard_subscription = self.create_subscription(
-            std_msgs.msg.Strnig,
-            'keyboard_op',
+            std_msgs.msg.String,
+            'key_pressed',
             self.keyboard_listener_callback,
             5
         )
@@ -82,10 +82,12 @@ class PointcloudSubscriber(Node):
         elif key == 'e':
             # erase
             self.vis.clear_geometries()
+            self.vis.poll_events()
+            self.vis.update_renderer()
         elif key == 'q':
             # quit
             self.destroy_node()
-        self.get_logger().info("")
+        self.get_logger().info("aaaa")
 
 def main(args=None):
 
