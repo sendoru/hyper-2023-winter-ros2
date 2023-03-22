@@ -25,6 +25,7 @@ setup(
         'realsense_publisher = cv_basics.realsense_pub:main',
         'pointcloud_publisher = cv_basics.pointcloud_pub:main',
         'pointcloud_subscriber = cv_basics.pointcloud_sub:main',
+        'keyboard_op = cv_basics.keyboard_op:main'
     ],
 },
 )
