@@ -49,3 +49,5 @@ DEPTH_MIN_THRESHOLD = 30
 
 # linear regression with exponential moving average에 사용할 지수
 ALPHA = 0.2
+
+DEPTH_THRESHOLD_TO_PRINT = 100
