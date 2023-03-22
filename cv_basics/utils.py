@@ -16,14 +16,17 @@ def preprocess(image: np.ndarray, intrinsic_mat: np.ndarray, distortion_coeff: n
     image.flags.writeable = False
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = hands.process(image)
-    # Draw the hand annotations on the image.
+    # Draw the hand annotations on the image
     image.flags.writeable = True
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    
     return results
 
 def draw_hand(results, image):
+    if type(results.multi_hand_landmarks) == type(None):
+        return
     for hand_no, hand_landmarks in enumerate(results.multi_hand_landmarks):
-        print(f'HAND NUMBER: {hand_no+1}')
+        # print(f'HAND NUMBER: {hand_no+1}')
         
         mp_drawing.draw_landmarks(
             image,
