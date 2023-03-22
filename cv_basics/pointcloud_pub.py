@@ -53,7 +53,7 @@ def get_key(settings):
     return key
 
 class PointCloudPublisher(Node):
-    def __init__(self, video_l, video_r, debug):
+    def __init__(self, video_l, video_r, use_file, show_video):
         """
         Class constructor to set up the node
         """
@@ -81,7 +81,8 @@ class PointCloudPublisher(Node):
         self.cap_l = cv2.VideoCapture(video_l)
         self.cap_r = cv2.VideoCapture(video_r)
 
-        self.debug = debug
+        self.use_file = use_file
+        self.show_video = show_video
 
         self.hands_l = mp_hands.Hands(
             max_num_hands=1,
@@ -106,11 +107,14 @@ class PointCloudPublisher(Node):
         # Capture frame-by-frame
         # This method returns True/False as well
         # as the video frame.
+        time_elapsed_for_fps = time_elapsed = time.time()
+        if self.use_file:
+            time_elapsed = self.frame_no / FRAME_RATE
         ret_l, frame_l = self.cap_l.read()
         ret_r, frame_r = self.cap_r.read()
         
         if not ret_l or not ret_r:
-            print("Ignoring empty camera frame.")
+            self.get_logger().info("Ignoring empty camera frame.")
             cv2.destroyAllWindows()
             return
         
@@ -119,8 +123,11 @@ class PointCloudPublisher(Node):
         cur_point = None
 
         result_l = preprocess(frame_l, L_INTRINSIC, L_DISTORTION, self.hands_l)
+        draw_hand(result_l, frame_l)
         result_r = preprocess(frame_r, R_INTRINSIC, R_DISTORTION, self.hands_r)
-        if self.debug:
+        draw_hand(result_r, frame_r)
+
+        if self.show_video:
             output_image = cv2.hconcat([frame_l, frame_r])
             cv2.imshow("Debug Image",output_image)
             cv2.waitKey(1)
@@ -133,7 +140,7 @@ class PointCloudPublisher(Node):
                 pass
 
             else:
-                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / ((self.frame_no / FRAME_RATE) - self.recent_timings[-1])
+                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / (time_elapsed - self.recent_timings[-1])
                 if np.linalg.norm(cur_point) <= DIST_THRESHOLD and speed <= SPEED_THRESHOLD and np.abs(cur_point[2]) >= DEPTH_MIN_THRESHOLD:
 
                     # linear regression
@@ -160,17 +167,16 @@ class PointCloudPublisher(Node):
                 hand_landmars_array = hand_landmarks_to_array(result_r.multi_hand_landmarks[0])
                 cur_point = self.regression_r.predict(hand_landmars_array[8].reshape((1, -1))) / self.alpha_sum
                 cur_point = cur_point.reshape(3)
-            print(self.alpha_sum)
 
         if type(cur_point) != type(None):
             if len(self.recent_points) == 0:
                 self.recent_points.append(cur_point)
-                self.recent_timings.append(self.frame_no / FRAME_RATE)
+                self.recent_timings.append(time_elapsed)
             else:
-                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / ((self.frame_no / FRAME_RATE) - self.recent_timings[-1])
+                speed = np.linalg.norm(cur_point - self.recent_points[-1]) / (time_elapsed - self.recent_timings[-1])
                 if np.linalg.norm(cur_point) <= DIST_THRESHOLD and speed <= SPEED_THRESHOLD and np.abs(cur_point[2]) >= DEPTH_MIN_THRESHOLD:
                     self.recent_points.append(cur_point)
-                    self.recent_timings.append(self.frame_no / FRAME_RATE)
+                    self.recent_timings.append(time_elapsed)
 
             while len(self.recent_points) > 5:
                 self.recent_points.popleft()
@@ -188,9 +194,7 @@ class PointCloudPublisher(Node):
                     bspl = sp.interpolate.make_interp_spline(t, xy)
                     points = bspl(tt)
 
-                    # TODO publish poinets here!!!!
                     ret = msg.PointCloud()
-                    # TODO 이거 형변환 해주고 들어가야되나보네
                     ret.points = [geometry_msgs.msg.Point32() for _ in range(len(points))]
                     # cv2에선 단위가 mm인데 ROS에선 m임
                     for i, [x, y, z] in enumerate(points):
@@ -202,8 +206,6 @@ class PointCloudPublisher(Node):
                     ret.header.stamp.sec = int(cur_time)
                     ret.header.stamp.nanosec = int((cur_time - int(cur_time)) * 1e9)
                     self.publisher_.publish(ret)
-                    print(ret.points[-1])
-
                 
                     # Display the message on the console
                     self.get_logger().info(f'Publishing PointCloud with {len(ret.points)} point(s)')
@@ -216,20 +218,27 @@ def main(args=None):
     rclpy.init(args=args)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video_l", help="file/device name of left video", default=None, required=False)
-    parser.add_argument("--video_r", help="file/device name of right video", default=None, required=False)
+    parser.add_argument("--video_l", help="file/device name of left video", default='0', required=False)
+    parser.add_argument("--video_r", help="file/device name of right video", default='1', required=False)
     parser.add_argument("--debug", help="use debug mode: ", action="store_true")
+    parser.add_argument("--use_file", help="use actual file instead of device", action="store_true")
+    parser.add_argument("--show_video", help="use actual file instead of device", action="store_true")
 
     args = parser.parse_args()
 
     if args.debug:
+        args.use_file = True
+        args.show_video = True
         args.video_l = "/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_L_near.mp4"
         args.video_r = "/home/sendol/colcon_ws/src/hyper-2023-winter-ros2/output_R_near.mp4"
 
-    print(args.video_l, args.video_r)
+    # print(args.video_l, args.video_r)
 
     # Create the node
-    pointcolut_publisher = PointCloudPublisher(0 if args.video_l == None else args.video_l, 1 if args.video_r == None else args.video_r, args.debug)
+    if not args.use_file:
+        args.video_l = int(args.video_l)
+        args.video_r = int(args.video_r)
+    pointcolut_publisher = PointCloudPublisher(args.video_l, args.video_r, args.use_file, args.show_video)
 
     settings = None
     if os.name != 'nt':
@@ -237,7 +246,6 @@ def main(args=None):
 
     spinning = True
     while True:
-        
         # toggle interrupt mode when key is pressed
         key = get_key(settings)
         if key != '':
@@ -248,7 +256,10 @@ def main(args=None):
 
         # Spin the node so the callback function is called.
         if spinning:
+            time_prev = time.time()
             rclpy.spin_once(pointcolut_publisher)
+            time_curr = time.time()
+            pointcolut_publisher.get_logger().info(f"FPS: {1./(time_curr - time_prev):.3f}")
 
         # Destroy the node explicitly
         # (optional - otherwise it will be done automatically
